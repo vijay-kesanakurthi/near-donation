@@ -41,30 +41,28 @@ class DonationContract {
     -- payableFunction
   */
   @call({ payableFunction: true })
-  donate() {
-    // Get who is calling the method and how much $NEAR they attached
+donate() {
     let donor = near.predecessorAccountId();
     let donationAmount: bigint = near.attachedDeposit() as bigint;
 
     let donatedSoFar = this.donations.get(donor, { defaultValue: BigInt(0) });
     let toTransfer = donationAmount;
 
-    // This is the user's first donation, lets register it, which increases storage
+    // Deduct storage cost for each donation
     if (donatedSoFar == BigInt(0)) {
-      assert(
-        donationAmount > STORAGE_COST,
-        `Attach at least ${STORAGE_COST} yoctoNEAR`
-      );
-
-      // Subtract the storage cost to the amount to transfer
-      toTransfer -= STORAGE_COST;
+        assert(
+            donationAmount > STORAGE_COST,
+            `Attach at least ${STORAGE_COST} yoctoNEAR for storage cost`
+        );
+        // Deduct storage cost from the donation amount
+        toTransfer -= STORAGE_COST;
     }
 
     // Persist in storage the amount donated so far
     donatedSoFar += donationAmount;
     this.donations.set(donor, donatedSoFar);
     near.log(
-      `Thank you ${donor} for donating ${donationAmount}! You donated a total of ${donatedSoFar}`
+        `Thank you ${donor} for donating ${donationAmount}! You donated a total of ${donatedSoFar}`
     );
 
     // Send the money to the beneficiary
@@ -73,7 +71,8 @@ class DonationContract {
 
     // Return the total amount donated so far
     return donatedSoFar.toString();
-  }
+}
+
 
   // ============Private functions================
 
@@ -81,19 +80,33 @@ class DonationContract {
     Function to change the beneficiary of the contract
   */
   @call({ privateFunction: true })
-  change_beneficiary(beneficiary, beneficiaryName, description) {
+change_beneficiary(
+    beneficiary: string,
+    beneficiaryName: string,
+    description: string,
+) {
+    // Ensure only the contract owner can change the beneficiary
+    assert(near.sender == near.contractName, "Only the contract owner can change the beneficiary");
+
+    // Perform beneficiary information update
     this.beneficiary = beneficiary;
     this.beneficiaryName = beneficiaryName;
     this.description = description;
-  }
+}
+
 
   /*
     Function to reset the donations
   */
   @call({ privateFunction: true })
-  reset_donations() {
+reset_donations() {
+    // Ensure only the contract owner can reset donations
+    assert(near.sender == near.contractName, "Only the contract owner can reset donations");
+
+    // Clear all donation records
     this.donations.clear();
-  }
+}
+
 
   // ============View functions================
 
@@ -121,25 +134,30 @@ class DonationContract {
     Function to get recent 50 the donations
   */
   @view({})
-  get_donations({
+get_donations({
     from_index = 0,
     limit = 50,
-  }: {
+}: {
     from_index: number;
     limit: number;
-  }): Donation[] {
+}): Donation[] {
     let ret: Donation[] = [];
 
+    // Calculate the actual start index based on the total number of donations
+    const startIndex = Math.min(from_index, this.donations.length);
+
+    // Retrieve donations starting from the calculated start index up to the specified limit
     for (const account_id of this.donations.keys({
-      start: from_index,
-      limit,
+        start: startIndex,
+        limit,
     })) {
-      const donation: Donation = this.get_donation_for_account({ account_id });
-      ret.push(donation);
+        const donation: Donation = this.get_donation_for_account({ account_id });
+        ret.push(donation);
     }
 
     return ret;
-  }
+}
+
 
   /*
     Function to get the donation for a specific account
@@ -157,16 +175,17 @@ class DonationContract {
     Function to get the total amount donated
   */
   @view({})
-  get_total_donated(): string {
-    let total: bigint = BigInt(0);
-    for (const donation of this.donations.keys({
-      start: 0,
-      limit: this.donations.length,
-    })) {
-      total += this.donations.get(donation);
+get_total_donated(): string {
+    let total: BigInt = BigInt(0);
+    
+    // Iterate over all donations and sum up the total amount donated
+    for (const donation of this.donations.values()) {
+        total += donation;
     }
+
     return total.toString();
-  }
+}
+
 
   /*
     Function to get the top 5 donors
